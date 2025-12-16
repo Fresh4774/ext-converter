@@ -3,13 +3,10 @@ import path from 'path';
 import AdmZip from 'adm-zip';
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
-import textract from 'textract';
-import { promisify } from 'util';
 
 /* Types */
 
-export enum FSContentType
-{
+export enum FSContentType {
   Dir,
   File
 }
@@ -27,10 +24,6 @@ export interface ProcessedFile {
 }
 
 export type ProgressCallback = (processed: number, total: number) => void;
-
-/* Textract promisified */
-
-const textractPromise = promisify(textract.fromFileWithPath);
 
 /* ZIP Extraction */
 
@@ -52,7 +45,7 @@ export async function extractTextFromPdf(filePath: string): Promise<string> {
     return data.text;
   } catch (error) {
     console.error(`PDF error (${filePath})`, error);
-    return `[Error processing PDF: ${error.message}]`;
+    return `[Error processing PDF: ${error instanceof Error ? error.message : 'Unknown error'}]`;
   }
 }
 
@@ -62,20 +55,76 @@ export async function extractTextFromDocx(filePath: string): Promise<string> {
     return result.value;
   } catch (error) {
     console.error(`DOCX error (${filePath})`, error);
-    return `[Error processing DOCX: ${error.message}]`;
+    return `[Error processing DOCX: ${error instanceof Error ? error.message : 'Unknown error'}]`;
   }
 }
 
-export async function extractTextFromFile(filePath: string): Promise<string> {
+// Supported text-based file extensions (binary formats like images, xlsx, pptx handled separately)
+const TEXT_EXTENSIONS = [
+  // Basic text files
+  '.txt', '.md', '.csv', '.tsv', '.log',
+  
+  // Data & Config
+  '.json', '.xml', '.yaml', '.yml', '.toml', '.ini', '.cfg', '.conf', '.env',
+  
+  // JavaScript/TypeScript
+  '.js', '.jsx', '.ts', '.tsx', '.mjs', '.cjs',
+  
+  // Web & Markup
+  '.html', '.htm', '.css', '.scss', '.sass', '.less', '.svg',
+  '.vue', '.svelte', '.pug', '.jade', '.slim', '.haml',
+  '.ejs', '.handlebars', '.hbs', '.mustache', '.twig', '.blade', '.erb', '.asp', '.aspx', '.jsp',
+  
+  // Python
+  '.py', '.pyw', '.pyx', '.pyi',
+  
+  // Java & JVM
+  '.java', '.kt', '.scala', '.clj', '.gradle', '.maven',
+  
+  // C/C++
+  '.c', '.cpp', '.cc', '.cxx', '.h', '.hpp', '.hh', '.hxx',
+  
+  // C# & .NET
+  '.cs', '.vb', '.vbs', '.fs',
+  
+  // Go
+  '.go',
+  
+  // Rust
+  '.rs',
+  
+  // Ruby
+  '.rb', '.erb',
+  
+  // PHP
+  '.php', '.phtml',
+  
+  // Swift
+  '.swift',
+  
+  // Shell scripts
+  '.sh', '.bash', '.zsh', '.fish', '.ps1', '.bat', '.cmd',
+  
+  // Other programming languages
+  '.r', '.m', '.matlab', '.sql', '.pl', '.perl', '.lua', '.dart', '.elm',
+  '.ex', '.exs', '.cr', '.nim', '.zig', '.v', '.hx', '.purs', '.reason', '.re', '.rescript',
+  '.coffee', '.ls', '.asm', '.s', '.f', '.f90', '.pas', '.dpr', '.ml',
+  
+  // Build & Config files
+  '.cmake', '.makefile', '.dockerfile', '.webpack', '.gulpfile', '.gruntfile', '.sbt',
+  '.gitignore', '.gitattributes', '.editorconfig', '.npmrc', '.yarnrc', '.babelrc', '.eslintrc',
+  '.prettierrc', '.stylelintrc', '.dockerignore',
+  
+  // Other
+  '.vim', '.proto', '.graphql', '.gql', '.prisma', '.tf', '.tfvars'
+];
+
+export async function extractTextFromPlainFile(filePath: string): Promise<string> {
   try {
-    return await textractPromise(filePath);
-  } catch {
-    try {
-      return await fs.readFile(filePath, 'utf8');
-    } catch (error) {
-      console.error(`Textract error (${filePath})`, error);
-      return `[Error processing file: ${error.message}]`;
-    }
+    return await fs.readFile(filePath, 'utf8');
+  } catch (error) {
+    console.error(`Plain file error (${filePath})`, error);
+    return `[Error reading file: ${error instanceof Error ? error.message : 'Unknown error'}]`;
   }
 }
 
@@ -132,37 +181,27 @@ export async function processFile(
 
     let text: string;
 
-    switch (ext) {
-      case '.pdf':
-        text = await extractTextFromPdf(filePath);
-        break;
-
-      case '.doc':
-      case '.docx':
-        text = await extractTextFromDocx(filePath);
-        break;
-
-      case '.txt':
-      case '.js':
-      case '.jsx':
-      case '.ts':
-      case '.tsx':
-      case '.py':
-      case '.java':
-      case '.c':
-      case '.cpp':
-      case '.cs':
-      case '.html':
-      case '.css':
-      case '.json':
-      case '.md':
-      case '.xml':
-      case '.csv':
+    // Handle specific binary formats
+    if (ext === '.pdf') {
+      text = await extractTextFromPdf(filePath);
+    } else if (ext === '.doc' || ext === '.docx') {
+      text = await extractTextFromDocx(filePath);
+    } 
+    // Handle text-based files
+    else if (TEXT_EXTENSIONS.includes(ext)) {
+      text = await extractTextFromPlainFile(filePath);
+    }
+    // Try to read as text for unknown extensions
+    else {
+      try {
         text = await fs.readFile(filePath, 'utf8');
-        break;
-
-      default:
-        text = await extractTextFromFile(filePath);
+        // Check if it's actually text (simple heuristic)
+        if (text.includes('\0')) {
+          text = `[Binary file - cannot extract text]`;
+        }
+      } catch {
+        text = `[Unsupported file type: ${ext}]`;
+      }
     }
 
     return { filePath, text, extension: ext };
@@ -170,7 +209,7 @@ export async function processFile(
     console.error(`File error (${filePath})`, error);
     return {
       filePath,
-      text: `[Error processing file: ${error.message}]`,
+      text: `[Error processing file: ${error instanceof Error ? error.message : 'Unknown error'}]`,
       extension: ext
     };
   }
@@ -248,4 +287,3 @@ export function getFileStats(results: ProcessedFile[]) {
 
   return stats;
 }
-
