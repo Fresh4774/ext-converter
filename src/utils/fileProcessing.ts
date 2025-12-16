@@ -3,8 +3,7 @@ import path from 'path';
 import AdmZip from 'adm-zip';
 import pdfParse from 'pdf-parse';
 import mammoth from 'mammoth';
-import textract from 'textract';
-import { promisify } from 'util';
+import * as XLSX from 'xlsx';
 
 /* Types */
 
@@ -28,10 +27,6 @@ export interface ProcessedFile {
 
 export type ProgressCallback = (processed: number, total: number) => void;
 
-/* Textract promisified */
-
-const textractPromise = promisify(textract.fromFileWithPath);
-
 /* ZIP Extraction */
 
 export async function extractZip(
@@ -52,7 +47,7 @@ export async function extractTextFromPdf(filePath: string): Promise<string> {
     return data.text;
   } catch (error) {
     console.error(`PDF error (${filePath})`, error);
-    return `[Error processing PDF: ${error.message}]`;
+    return `[Error processing PDF: ${error instanceof Error ? error.message : String(error)}]`;
   }
 }
 
@@ -62,20 +57,36 @@ export async function extractTextFromDocx(filePath: string): Promise<string> {
     return result.value;
   } catch (error) {
     console.error(`DOCX error (${filePath})`, error);
-    return `[Error processing DOCX: ${error.message}]`;
+    return `[Error processing DOCX: ${error instanceof Error ? error.message : String(error)}]`;
+  }
+}
+
+export async function extractTextFromExcel(filePath: string): Promise<string> {
+  try {
+    const buffer = await fs.readFile(filePath);
+    const workbook = XLSX.read(buffer, { type: 'buffer' });
+    
+    let text = '';
+    workbook.SheetNames.forEach((sheetName) => {
+      const sheet = workbook.Sheets[sheetName];
+      text += `\n=== Sheet: ${sheetName} ===\n`;
+      text += XLSX.utils.sheet_to_txt(sheet);
+    });
+    
+    return text;
+  } catch (error) {
+    console.error(`Excel error (${filePath})`, error);
+    return `[Error processing Excel: ${error instanceof Error ? error.message : String(error)}]`;
   }
 }
 
 export async function extractTextFromFile(filePath: string): Promise<string> {
   try {
-    return await textractPromise(filePath);
-  } catch {
-    try {
-      return await fs.readFile(filePath, 'utf8');
-    } catch (error) {
-      console.error(`Textract error (${filePath})`, error);
-      return `[Error processing file: ${error.message}]`;
-    }
+    // Try to read as UTF-8 text first
+    return await fs.readFile(filePath, 'utf8');
+  } catch (error) {
+    console.error(`Text extraction error (${filePath})`, error);
+    return `[Error processing file: ${error instanceof Error ? error.message : String(error)}]`;
   }
 }
 
@@ -142,6 +153,13 @@ export async function processFile(
         text = await extractTextFromDocx(filePath);
         break;
 
+      case '.xls':
+      case '.xlsx':
+      case '.xlsm':
+      case '.xlsb':
+        text = await extractTextFromExcel(filePath);
+        break;
+
       case '.txt':
       case '.js':
       case '.jsx':
@@ -158,6 +176,20 @@ export async function processFile(
       case '.md':
       case '.xml':
       case '.csv':
+      case '.yml':
+      case '.yaml':
+      case '.toml':
+      case '.ini':
+      case '.sh':
+      case '.bash':
+      case '.sql':
+      case '.php':
+      case '.rb':
+      case '.go':
+      case '.rs':
+      case '.swift':
+      case '.kt':
+      case '.scala':
         text = await fs.readFile(filePath, 'utf8');
         break;
 
@@ -170,7 +202,7 @@ export async function processFile(
     console.error(`File error (${filePath})`, error);
     return {
       filePath,
-      text: `[Error processing file: ${error.message}]`,
+      text: `[Error processing file: ${error instanceof Error ? error.message : String(error)}]`,
       extension: ext
     };
   }
@@ -248,4 +280,3 @@ export function getFileStats(results: ProcessedFile[]) {
 
   return stats;
 }
-
