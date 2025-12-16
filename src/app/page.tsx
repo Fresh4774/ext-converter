@@ -330,7 +330,6 @@ export default function FileProcessor() {
             <input
               ref={dirInputRef}
               type="file"
-              webkitdirectory="true"
               multiple
               onChange={handleFileSelect}
               className="hidden"
