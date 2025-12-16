@@ -1,9 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
   reactCompiler: true,
-  turbopack: false, // Disable Turbopack to fix textract build error
+  experimental: {
+    turbo: false, // Try this instead
+  },
 };
 
 export default nextConfig;
